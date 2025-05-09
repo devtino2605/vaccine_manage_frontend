@@ -1,0 +1,23 @@
+/* style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '1rem 0' }} */
+.filter {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 1rem 0;
+}
+
+@media (max-width: 768px) {
+
+    .section_shop {
+        padding: 0.2rem 0.2rem;
+    }
+
+    .filter {
+        display: block;
+    }
+
+    .filter_group {
+        padding: 20px 0;
+       
+    }
+}
