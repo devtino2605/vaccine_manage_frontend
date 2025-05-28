@@ -49,3 +49,7 @@ export const callFetchCenter = (query) => {
 export const callDeleteCenter = (id) => {
   return axios.delete(`/centers/${id}`);
 };
+
+export const getCenterById = (id) => {
+  return axios.get(`/centers/${id}`);
+};

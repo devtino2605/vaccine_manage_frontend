@@ -1,16 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import DataTable from '../data-table';
-import { Badge, message, notification, Popconfirm, Space } from 'antd';
-import { CloseCircleOutlined, EditOutlined } from '@ant-design/icons';
+import { Badge, message, notification, Popconfirm, Space, Tooltip } from 'antd';
+import { CloseCircleOutlined, EditOutlined, CopyOutlined } from '@ant-design/icons';
 import { callCancelAppointment } from '../../config/api.appointment';
-import { callMyAppointments } from '../../config/api.auth';
+import { callFetchCenter } from '../../config/api.center';
+import { callFetchVaccine } from '../../config/api.vaccine';
+import solanaClient from '../../config/solnana';
+import { useSelector } from 'react-redux';
 
 const History = () => {
     const tableRef = useRef();
-
-    const reloadTable = () => {
-        tableRef?.current?.reload();
-    };
+    const user = useSelector((state) => state.account.user);
 
     const [isFetching, setFetching] = useState(false);
     const [listSchedule, setListSchedule] = useState([]);
@@ -20,155 +20,194 @@ const History = () => {
         pages: 0,
         total: 0,
     });
+    const [centers, setCenters] = useState({});
+    const [vaccines, setVaccines] = useState({});
+
+    const reloadTable = () => {
+        tableRef?.current?.reload();
+    };
 
     const handleCancel = async (id) => {
         if (id) {
-            const res = await callCancelAppointment(id);
-            if (res && +res.statusCode === 200) {
-                message.success('Hủy lịch tiêm thành công');
-                reloadTable();
-            } else {
+            try {
+                // Update status on blockchain first
+                await solanaClient.updateVaccinationStatus(id, { cancelled: true });
+                
+                // Then update on server
+                const res = await callCancelAppointment(id);
+                if (res && +res.statusCode === 200) {
+                    message.success('Appointment cancelled successfully');
+                    reloadTable();
+                } else {
+                    notification.error({
+                        message: res.error,
+                        description: res.message,
+                    });
+                }
+            } catch (error) {
                 notification.error({
-                    message: res.error,
-                    description: res.message,
+                    message: 'Error',
+                    description: 'Failed to cancel appointment: ' + error.message,
                 });
             }
         }
     };
 
+    // Fetch centers and vaccines data
+    const fetchCentersAndVaccines = async () => {
+        try {
+            const [centersRes, vaccinesRes] = await Promise.all([
+                callFetchCenter(),
+                callFetchVaccine()
+            ]);
+
+            if (centersRes?.data?.result) {
+                const centersMap = {};
+                centersRes.data.result.forEach(center => {
+                    centersMap[center.centerId] = center.name;
+                });
+                setCenters(centersMap);
+            }
+
+            if (vaccinesRes?.data?.result) {
+                const vaccinesMap = {};
+                vaccinesRes.data.result.forEach(vaccine => {
+                    vaccinesMap[vaccine.vaccineId] = vaccine.name;
+                });
+                setVaccines(vaccinesMap);
+            }
+        } catch (error) {
+            console.error('Error fetching centers and vaccines:', error);
+        }
+    };
+
     useEffect(() => {
+        fetchCentersAndVaccines();
         fetchMyAppointments();
     }, []);
 
     const fetchMyAppointments = async () => {
         setFetching(true);
-
-        setTimeout(async () => {
-            const res = await callMyAppointments();
+        try {
+            const res = await solanaClient.getVaccinationRecords(user.id);
             if (res && res.data) {
                 setMeta(res.data.meta);
                 setListSchedule(res.data.result);
             }
-            setFetching(false);
-        }, 500);
+        } catch (error) {
+            notification.error({
+                message: 'Error',
+                description: 'Failed to fetch appointments from Solana',
+            });
+        }
+        setFetching(false);
     };
-
 
     const columns = [
         {
-            title: 'STT',
-            key: 'index',
-            width: 50,
-            align: 'center',
-            render: (text, record, index) => {
-                return <>{index + 1 + (meta.page - 1) * meta.pageSize}</>;
-            },
-            hideInSearch: true,
+            title: 'Appointment ID',
+            dataIndex: 'appointmentId',
+            key: 'appointmentId',
         },
         {
             title: 'Vaccine',
-            dataIndex: 'vaccineName',
-            hideInSearch: true,
+            dataIndex: 'vaccineId',
+            key: 'vaccineId',
+            render: (vaccineId) => vaccines[vaccineId] || `Vaccine ID: ${vaccineId}`,
         },
         {
-            title: 'Doctor',
-            dataIndex: 'doctorName',
-            hideInSearch: true,
-        },
-        {
-            title: 'Date',
+            title: 'Appointment Date',
             dataIndex: 'appointmentDate',
-            hideInSearch: true,
-        },
-        {
-            title: 'Time',
-            dataIndex: 'appointmentTime',
-            hideInSearch: true,
+            key: 'appointmentDate',
+            render: (date) => new Date(date).toLocaleDateString(),
         },
         {
             title: 'Status',
             dataIndex: 'status',
-            hideInSearch: true,
-            render: (_value, entity) => {
-                let color;
-                switch (entity.status) {
-                    case 'PENDING':
-                        color = '#faad14';
-                        break;
-                    case 'COMPLETED':
-                        color = '#1890ff';
-                        break;
-                    case 'PROCESSING':
-                        color = '#52c41a';
-                        break;
-                }
-                return <Badge count={entity.status} showZero color={color} />;
-            },
+            key: 'status',
+            render: (status) => (
+                <Badge
+                    status={
+                        status === 'PENDING'
+                            ? 'processing'
+                            : status === 'COMPLETED'
+                            ? 'success'
+                            : status === 'CANCELLED'
+                            ? 'error'
+                            : 'default'
+                    }
+                    text={status}
+                />
+            ),
+        },
+        {
+            title: 'Center',
+            dataIndex: 'centerId',
+            key: 'centerId',
+            render: (centerId) => centers[centerId] || `Center ID: ${centerId}`,
+        },
+        {
+            title: 'Doctor',
+            dataIndex: 'doctorId',
+            key: 'doctorId',
+            render: (doctorId) => doctorId ? `Doctor ID: ${doctorId}` : 'Not assigned',
         },
         {
             title: 'Actions',
-            hideInSearch: true,
-            width: 50,
-            render: (_value, entity) => (
-
-                entity.status !== 'COMPLETED' && entity.status !== 'CANCELLED' ? (
-                    <Popconfirm
-                        placement='leftTop'
-                        title='Xác nhận hủy lịch hẹn'
-                        description='Bạn có chắc chắn muốn hủy lịch hẹn này?'
-                        onConfirm={() => handleCancel(entity.appointmentId)}
-                        okText='Xác nhận'
-                        cancelText='Hủy'
-                    >
-                        <span style={{ cursor: 'pointer', margin: '0 10px' }}>
-                            <CloseCircleOutlined
-                                style={{
-                                    fontSize: 20,
-                                    color: '#e22929',
-                                }}
-                            />
-                        </span>
-                    </Popconfirm>
-                ) : null
-               
+            key: 'actions',
+            render: (_, record) => (
+                <Space>
+                    {record.status === 'PENDING' && (
+                        <Popconfirm
+                            title="Are you sure you want to cancel this appointment?"
+                            onConfirm={() => handleCancel(record.appointmentId)}
+                            okText="Yes"
+                            cancelText="No"
+                        >
+                            <Tooltip title="Cancel Appointment">
+                                <CloseCircleOutlined
+                                    style={{ color: 'red', cursor: 'pointer' }}
+                                />
+                            </Tooltip>
+                        </Popconfirm>
+                    )}
+                    <Tooltip title="Copy Transaction Signature">
+                        <CopyOutlined
+                            onClick={() => {
+                                navigator.clipboard.writeText(record.publicKey);
+                                message.success('Transaction signature copied to clipboard');
+                            }}
+                            style={{ cursor: 'pointer' }}
+                        />
+                    </Tooltip>
+                </Space>
             ),
         },
-    ]
-
-
+    ];
 
     return (
-        <div>
-            <DataTable
-                actionRef={tableRef}
-                headerTitle='Lịch sử tiêm chủng'
-                rowKey='appointId'
-                loading={isFetching}
-                columns={columns}
-                dataSource={listSchedule}
-                request={async () => {
-                    await fetchMyAppointments();
-                }}
-                scroll={{ x: true }}
-                pagination={{
-                    current: meta.page,
-                    pageSize: meta.pageSize,
-                    showSizeChanger: true,
-                    total: meta.total,
-                    showTotal: (total, range) => {
-                        return (
-                            <div>
-                                {range[0]}-{range[1]} trên {total} rows
-                            </div>
-                        );
-                    },
-                }}
-                rowSelection={false}
-                search={false}
-            />
+        <DataTable
+            actionRef={tableRef}
+            headerTitle="My Vaccination History"
+            rowKey="appointmentId"
+            loading={isFetching}
+            columns={columns}
+            dataSource={listSchedule}
+            pagination={{
+                current: meta.page,
+                pageSize: meta.pageSize,
+                total: meta.total,
+                showTotal: (total, range) => {
+                    return (
+                        <div>
+                            {range[0]}-{range[1]} of {total} records
+                        </div>
+                    );
+                },
+            }}
+            scroll={{ x: true }}
+        />
+    );
+};
 
-        </div>
-    )
-}
-
-export default History
+export default History;

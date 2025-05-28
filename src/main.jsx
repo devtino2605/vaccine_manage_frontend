@@ -11,14 +11,17 @@ import { ConfigProvider } from 'antd';
 
 const rootElement = document.getElementById('root');
 const root = createRoot(rootElement);
+import { App } from 'antd';
 
 root.render(
 
   <React.StrictMode>
-    <ConfigProvider locale={enUS}>
-      <Provider store={store}>
-        <Root />
-      </Provider>
-    </ConfigProvider>
+    <App>
+      <ConfigProvider locale={enUS}>
+        <Provider store={store}>
+          <Root />
+        </Provider>
+      </ConfigProvider>
+    </App>
   </React.StrictMode>,
 );

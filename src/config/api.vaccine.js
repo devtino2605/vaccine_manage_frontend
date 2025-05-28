@@ -66,3 +66,6 @@ export const callDeleteVaccine = (id) => {
   return axios.delete(`/vaccines/${id}`);
 };
 
+export const getVaccineById = (id) => {
+  return axios.get(`/vaccines/${id}`);
+};

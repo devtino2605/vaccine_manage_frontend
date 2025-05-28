@@ -2,6 +2,7 @@ import { Col, Form, message, notification, Row } from 'antd';
 import { useEffect, useState } from 'react';
 import { ModalForm, ProFormDatePicker, ProFormSelect, ProFormTimePicker } from '@ant-design/pro-components';
 import { useSelector } from 'react-redux';
+import { App } from 'antd';
 
 
 import '../../styles/reset.scss';
@@ -20,6 +21,7 @@ const waitTime = (time = 100) => {
 
 const ModalOrder = (props) => {
   const navigate = useNavigate();
+  const { notification } = App.useApp();
   const [displayCenter, setDisplayCenter] = useState(null);
   const [animation, setAnimation] = useState('open');
   const { openModal, setOpenModal, vaccine } = props;
@@ -39,16 +41,7 @@ const ModalOrder = (props) => {
   const submitOrder = async (valuesForm) => {
     const { date, time, center, paymentType } = valuesForm;
   
-    if (paymentType === 'CREDIT_CARD') {
-      const res = await callAddAppointmentCreditCard(
-        vaccine.vaccineId,
-        user.id,
-        center,
-        date,
-        time,
-      );
-      window.location.href = res;
-    } else {
+    if (paymentType === 'CASH') {
       const res = await callAddAppointmentCash(
         vaccine.vaccineId,
         user.id,
@@ -56,7 +49,7 @@ const ModalOrder = (props) => {
         date,
         time,
       );
-      if (res.statusCode === 200) {
+      if (res.success === true) {
         message.success('Appointment booked successfully');
         handleReset();
         navigate('/success');
@@ -66,12 +59,11 @@ const ModalOrder = (props) => {
           description: res.message,
         });
       }
-    }
+    } 
   };
   
   const paymentType = [
     { type: 'CASH', name: 'Cash' },
-    { type: 'CREDIT_CARD', name: 'Card ATM' },
   ];
   
   useEffect(() => {
